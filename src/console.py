@@ -72,7 +72,7 @@ class Console:
                 break
             try:
                 inp = input(self.input_str)
-            except KeyboardInterrupt:
+            except (KeyboardInterrupt, EOFError):
                 break
             if inp == "":
                 continue
