@@ -304,10 +304,22 @@ def main(args):
         first = True
         while True:
             try:
-                csv_path = input("Please, insert{} csv file path: ".format('' if first else ' a valid'))
+                csv_path = input("Please, insert{} csv file path [new]: ".format('' if first else ' a valid'))
             except KeyboardInterrupt:
                 return
             first = False
+            if csv_path in ['new', '']:
+                try:
+                    csv_path = input("Please, insert new csv file path: ")
+                except KeyboardInterrupt:
+                    return
+                try:
+                    with open(csv_path, 'w') as f:
+                        writer = csv.DictWriter(f, fieldnames=CSV_HEADER)
+                        writer.writeheader()
+                    break
+                except:
+                    print("Could not create file.")
             if os.path.exists(csv_path):
                 break
     hosts_handler = HostsHandler()
