@@ -44,10 +44,10 @@ class Host(object):
     def to_dhcp(self):
         """Prepares this host for dhcpd.conf file format serialization."""
         return """
-    host {} {
+    host {} [
         hardware ethernet {};
         fixed-address {};
-    }""".format(self.name, self.mac, self.ip)
+    ]""".format(self.name, self.mac, self.ip).replace('[', '{').replace(']', '}')
 
     def to_csv(self):
         """Prepares this host for csv serialization."""
@@ -109,10 +109,11 @@ class MainConsole(console.Console):
             SearchCommand(),
             ListCommand(),
             SaveCommand(),
+            ExportCommand(),
         ]
 
     def closing(self):
-        print('\n')
+        print('\n\n\nDo you wish to save before closing?\n')
         SaveCommand().run(['closing'], None, self)
 
 
@@ -260,10 +261,45 @@ class SaveCommand(console.Command):
         print("Successfully saved.")
 
 
+class ExportCommand(console.Command):
+    def __init__(self):
+        super().__init__(
+            recognition='export $',
+            help_str="Exports current session in dhcpd.conf-compatible format to file.",
+            usage_str="Usage:      - export: export to path.\n"
+                      "            - export simple: export to path, do not include headers and footers.",
+            short_name="export",
+            short_help="Exports current session."
+        )
+
+    def run(self, args, usr, con=None):
+        print("Press Ctrl-C to cancel.")
+        try:
+            path = input("Exporting path: ")
+        except KeyboardInterrupt:
+            print('\nNothing exported.')
+            return
+        with open(path, 'w') as f:
+            if 'simple' not in args:
+                try:
+                    with open('dhcpdconf-header.txt', 'r') as headerfile:
+                        f.write(headerfile.read())
+                except: pass
+            for host in con.hosts_handler.hosts:
+                f.write(host.to_dhcp())
+            if 'simple' not in args:
+                try:
+                    with open('dhcpdconf-footer.txt', 'r') as footerfile:
+                        f.write(footerfile.read())
+                except: pass
+        print("Successfully exported.")
+
+
 def main(args):
     csv_path = ''
     if len(args) > 0:
         csv_path = args[0]
+        print("{} file '{}'.".format('Using' if os.path.exists(csv_path) else 'Cannot use', csv_path))
     if not os.path.exists(csv_path):
         first = True
         while True:
