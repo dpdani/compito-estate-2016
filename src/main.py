@@ -97,6 +97,14 @@ class HostsHandler(object):
                         found.append(host)
         return found
 
+    def remove(self, n='', name='', vm='', mac='', ip=''):
+        hosts = []
+        to_remove = self.search(n, name, vm, mac, ip)
+        for host in self.hosts:
+            if host not in to_remove:
+                hosts.append(host)
+        self.hosts = hosts
+
 
 class MainConsole(console.Console):
     def __init__(self, hosts_handler, csv_path):
@@ -110,6 +118,7 @@ class MainConsole(console.Console):
             ListCommand(),
             SaveCommand(),
             ExportCommand(),
+            RemoveCommand(),
         ]
 
     def closing(self):
@@ -183,13 +192,14 @@ Usage:      - insert: Insert a new host in the list."""
 
 class SearchCommand(console.Command):
     def __init__(self):
-        usage = """
-Usage:      - search [field1[field2[...]]]: search for hosts in registry.
-"""
-        super().__init__("search % $ $ $ $", usage_str=usage, short_name="search",
-                         help_str="Search for hosts using given arguments: each argument represents a field."
-                                  "\nEach field must be one of 'n', 'nome', 'MV', 'MAC' or 'IP'.",
-                         short_help="Search for hosts in registry.")
+        super().__init__(
+            recognition="search % $ $ $ $",
+            usage_str="Usage:      - search [field1[field2[...]]]: search for hosts in registry.",
+            short_name="search",
+            help_str="Search for hosts using given arguments: each argument represents a field."
+                     "\nEach field must be one of 'n', 'nome', 'MV', 'MAC' or 'IP'.",
+            short_help="Search for hosts in registry."
+        )
 
     def run(self, args, usr, con=None):
         field_names = []
@@ -216,6 +226,73 @@ Usage:      - search [field1[field2[...]]]: search for hosts in registry.
         else:
             for host in found:
                 print(host)
+
+
+class RemoveCommand(console.Command):
+    def __init__(self):
+        super().__init__(
+            recognition='remove % $ $ $ $ $',
+            usage_str="Usage:      - remove [field1[field2[...]]]: remove hosts in registry.\n"
+                      "            - remove [field1[field2[...]]] dontask: remove hosts in registry. "
+                      "Don't ask for confirmation.",
+            short_name="remove",
+            help_str="Remove hosts in registry using given arguments: each argument represents a field ("
+                     "similarly to what the `search` command does).\nEach field must be one of 'n', 'nome',"
+                     "'MV', 'MAC' or 'IP'.",
+            short_help="Remove host from registry."
+        )
+
+    def run(self, args, usr, con=None):
+        field_names = []
+        for field in CSV_HEADER:
+            field_names.append(field.lower())
+        fields = defaultdict(str)
+        print("Press Ctrl-C to cancel at any moment.")
+        for arg in args:
+            if arg == 'dontask':
+                continue
+            if arg not in field_names:
+                print("Argument '{}' is not a valid field name.".format(arg))
+                continue
+            if arg not in fields:
+                try:
+                    inp = input("Select for field '{}': ".format(arg))
+                except KeyboardInterrupt:
+                    print("\nNo hosts removed.")
+                    return
+                fields[arg] = inp
+        length_before = len(con.hosts_handler.hosts)
+        found = con.hosts_handler.search(
+            n=fields['n'], name=fields['nome'], vm=fields['mv'], mac=fields['mac'], ip=fields['ip']
+        )
+        if len(found) == 0:
+            print("No hosts found to be removed.")
+        else:
+            print("These hosts are about to be removed:")
+            for host in found:
+                print(" - {}".format(host))
+            if 'dontask' not in args:
+                while True:
+                    try:
+                        yn = input("Are you sure you want to proceed? [y/N]  ").lower()
+                    except KeyboardInterrupt:
+                        print("\nNo hosts removed.")
+                        return
+                    if yn == 'y':
+                        break
+                    elif yn in ['n', '']:
+                        print("No hosts removed.")
+                        return
+                    else:
+                        print("Unrecognizable input.")
+            con.hosts_handler.remove(
+                n=fields['n'], name=fields['nome'], vm=fields['mv'], mac=fields['mac'], ip=fields['ip']
+            )
+        delta_length = length_before - len(con.hosts_handler.hosts)
+        if delta_length != 0:
+            print("Removed {} host{}.".format(delta_length, '' if delta_length == 1 else 's'))
+
+
 
 
 class ListCommand(console.Command):
