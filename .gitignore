@@ -91,3 +91,7 @@ ENV/
 
 # PyCharm
 .idea/
+
+# Project-related data files
+dhcpdconf-header.txt
+dhcpdconf-footer.txt
