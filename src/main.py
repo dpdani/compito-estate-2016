@@ -59,6 +59,16 @@ class Host(object):
             'IP': self.ip
         }
 
+    def __eq__(self, other):
+        if isinstance(other, self.__class__):
+            if self.n == other.n and \
+               self.name == other.name and \
+               self.vm == other.vm and \
+               self.mac == other.mac and \
+               self.ip == other.ip:
+                return True
+        return False
+
     def __repr__(self):
         return "<Host n='{}' name='{}' vm='{}' mac='{}' ip='{}'>".format(self.n, self.name, self.vm, self.mac, self.ip)
 
@@ -68,31 +78,31 @@ class HostsHandler(object):
         self.hosts = []
 
     def search(self, n='', name='', vm='', mac='', ip=''):
-        re_n = re.compile(n)
-        re_name = re.compile(name)
-        re_vm = re.compile(vm)
-        re_mac = re.compile(mac)
-        re_ip = re.compile(ip)
+        re_n = re.compile(n, flags=re.IGNORECASE)
+        re_name = re.compile(name, flags=re.IGNORECASE)
+        re_vm = re.compile(vm, flags=re.IGNORECASE)
+        re_mac = re.compile(mac, flags=re.IGNORECASE)
+        re_ip = re.compile(ip, flags=re.IGNORECASE)
         found = []
         for host in self.hosts:
             if n != '':
-                if re_n.match(host.n) is not None:
+                if re_n.search(host.n) is not None:
                     if host not in found:
                         found.append(host)
             if name != '':
-                if re_name.match(host.name) is not None:
+                if re_name.search(host.name) is not None:
                     if host not in found:
                         found.append(host)
             if vm != '':
-                if re_vm.match(host.vm) is not None:
+                if re_vm.search(host.vm) is not None:
                     if host not in found:
                         found.append(host)
             if mac != '':
-                if re_mac.match(host.mac) is not None:
+                if re_mac.search(host.mac) is not None:
                     if host not in found:
                         found.append(host)
             if ip != '':
-                if re_ip.match(host.ip) is not None:
+                if re_ip.search(host.ip) is not None:
                     if host not in found:
                         found.append(host)
         return found
@@ -119,6 +129,7 @@ class MainConsole(console.Console):
             SaveCommand(),
             ExportCommand(),
             RemoveCommand(),
+            EditCommand(),
         ]
 
     def closing(self):
@@ -128,12 +139,14 @@ class MainConsole(console.Console):
 
 class HelpCommand(console.Command):
     def __init__(self):
-        usage = \
-            """
-Usage:      - help: Shows the main help page.
-            - help [command]: Shows command-specific help.
-"""
-        console.Command.__init__(self, "help $", "You're in the shish of the world.", usage, "help", "Shows this page.")
+        super().__init__(
+            recognition="help $",
+            help_str="You're in the shish of the world.",
+            usage_str="Usage:      - help: Shows the main help page.\n"
+                      "            - help [command]: Shows command-specific help.",
+            short_name="help",
+            short_help="Shows this page."
+        )
         self.commands_shortnames = {}  # also contains the command instance for faster lookups
         self.commands_shorthelps = {}  # also contains the command name for faster lookups
 
@@ -144,7 +157,8 @@ Usage:      - help: Shows the main help page.
             coms_list = ""
             for com in self.commands_shortnames:
                 coms_list += " - " + com + ": " + self.commands_shorthelps[com] + "\n"
-            print("\nCommand Line Help.\n" + self.usage_str + """
+            print("\nCommand Line Help.\n\n" + self.usage_str + """
+
 Here's a quick list of commands:
 {}
 You can look at command-specific help by typing "help [command]". Have Fun!
@@ -152,9 +166,10 @@ You can look at command-specific help by typing "help [command]". Have Fun!
         else:
             name = args[0]
             if name in self.commands_shortnames:
-                print("Displaying help for the \"{}\" command.".format(name))
                 print("{}: {}".format(name, self.commands_shorthelps[name]))
+                print('')
                 print(self.commands_shortnames[name].usage_str)
+                print('')
                 print(self.commands_shortnames[name].help_str)
             else:
                 print("Cannot find command \"%s\"." % name)
@@ -169,10 +184,13 @@ You can look at command-specific help by typing "help [command]". Have Fun!
 
 class InsertCommand(console.Command):
     def __init__(self):
-        usage = """
-Usage:      - insert: Insert a new host in the list."""
-        super().__init__("insert", help_str="Insert a new host in the list.", usage_str=usage, short_name="insert",
-                         short_help="Insert a new host in the list.")
+        super().__init__(
+            recognition="insert",
+            help_str="Insert a new host in the list.",
+            usage_str="Usage:      - insert: Insert a new host in the list.",
+            short_name="insert",
+            short_help="Insert a new host in the list."
+        )
 
     def run(self, args, usr, con=None):
         fields = {}
@@ -181,7 +199,7 @@ Usage:      - insert: Insert a new host in the list."""
             try:
                 fields[field] = input("Please insert data for the '{}' field: ".format(field))
             except KeyboardInterrupt:
-                print('\n')
+                print('')
                 return
         con.hosts_handler.hosts.append(
             Host(n=len(con.hosts_handler.hosts)+1, name=fields['nome'], vm=fields['MV'], mac=fields['MAC'],
@@ -225,7 +243,78 @@ class SearchCommand(console.Command):
             print("No hosts found.")
         else:
             for host in found:
-                print(host)
+                print(" - {}".format(host))
+            print("Found {} host{}.".format(len(found), '' if len(found) == 1 else 's'))
+
+
+class EditCommand(console.Command):
+    def __init__(self):
+        super().__init__(
+            recognition='edit % $ $ $ $',
+            usage_str="Usage:      - edit [field1[field2[...]]]: edit hosts in registry.",
+            short_name="edit",
+            help_str="Edit hosts that already exist in registry using given arguments: each argument "
+                     "represents a field (similarly to what the `search` command does).\nEach field "
+                     "must be one of 'n', 'nome', 'MV', 'MAC' or 'IP'.",
+            short_help="Edit hosts that already exist in registry."
+        )
+
+    def run(self, args, usr, con=None):
+        field_names = []
+        for field in CSV_HEADER:
+            field_names.append(field.lower())
+        fields = defaultdict(str)
+        print("Press Ctrl-C to cancel at any moment.")
+        for arg in args:
+            if arg not in field_names:
+                print("Argument '{}' is not a valid field name.".format(arg))
+                continue
+            if arg not in fields:
+                try:
+                    inp = input("Select for field '{}': ".format(arg))
+                except KeyboardInterrupt:
+                    print("\nNo hosts changed.")
+                    return
+                fields[arg] = inp
+        found = con.hosts_handler.search(
+            n=fields['n'], name=fields['nome'], vm=fields['mv'], mac=fields['mac'], ip=fields['ip']
+        )
+        if len(found) == 0:
+            print("No hosts found to be edited.")
+        else:
+            print("Found the following hosts to be edited:")
+            for host in found:
+                print(" - {}".format(host))
+            for host in found:
+                print("Editing {}.".format(host))
+                changed = False
+                for field in CSV_HEADER:
+                    print("Edit {} ".format(field), end='')
+                    if field == 'nome':
+                        field = 'name'
+                    elif field == 'MV':
+                        field = 'vm'
+                    elif field == 'MAC':
+                        field = 'mac'
+                    elif field == 'IP':
+                        field = 'ip'
+                    try:
+                        inp = input("[{}]: ".format(getattr(host, field)))
+                    except KeyboardInterrupt:
+                        print('')
+                        changed = False
+                        break
+                    if inp in ['', getattr(host, field)]:
+                        continue
+                    else:
+                        changed = True
+                        setattr(host, field, inp)
+                if changed:
+                    con.hosts_handler.hosts[con.hosts_handler.hosts.index(host)] = host
+                    print("Successfully edited host.")
+                else:
+                    print("Host unchanged.")
+
 
 
 class RemoveCommand(console.Command):
@@ -293,8 +382,6 @@ class RemoveCommand(console.Command):
             print("Removed {} host{}.".format(delta_length, '' if delta_length == 1 else 's'))
 
 
-
-
 class ListCommand(console.Command):
     def __init__(self):
         super().__init__(
@@ -308,6 +395,7 @@ class ListCommand(console.Command):
     def run(self, args, usr, con=None):
         for host in con.hosts_handler.search(name=r'\.*'):
             print(host)
+
 
 class SaveCommand(console.Command):
     def __init__(self):
@@ -370,6 +458,8 @@ class ExportCommand(console.Command):
                         f.write(footerfile.read())
                 except: pass
         print("Successfully exported.")
+
+
 
 
 def main(args):
